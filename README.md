@@ -24,7 +24,8 @@ A complete relational database project built with MySQL that manages operations 
 ## Project Structure
 
 ### 1. Database Setup
-![library EER Diagram](https://github.com/user-attachments/assets/4d7baafb-4601-4831-8d46-86be91bdcd69)
+![library EER Diagram](https://github.com/user-attachments/assets/ae71abb8-f8a9-4e4c-8494-eca59c99ba35)
+
 
 
 - **Database Creation**: Created a database named `library_db`.

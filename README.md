@@ -12,7 +12,8 @@
 A complete database-driven system to manage library operations, designed with MySQL. It covers database creation, table design, CRUD actions, advanced SQL queries, and procedural logic - all housed within a single project.
 
 
-![library EER Diagram](https://github.com/user-attachments/assets/922457f7-4279-46db-b9e5-fc51c5315fe5)
+![library image](https://github.com/user-attachments/assets/38755a7a-d101-4dfd-ada4-4811693b087d)
+
 
 
 

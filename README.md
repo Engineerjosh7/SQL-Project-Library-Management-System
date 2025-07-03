@@ -12,7 +12,8 @@
 A complete database-driven system to manage library operations, designed with MySQL. It covers database creation, table design, CRUD actions, advanced SQL queries, and procedural logic - all housed within a single project.
 
 
-![library image](https://github.com/user-attachments/assets/df626936-ab84-4d54-be14-40404cb1e629)
+![library EER Diagram](https://github.com/user-attachments/assets/922457f7-4279-46db-b9e5-fc51c5315fe5)
+
 
 
 ## Objectives
@@ -340,45 +341,75 @@ SELECT * FROM branch_reports;
 Use the CREATE TABLE AS (CTAS) statement to create a new table active_members containing members who have issued at least one book in the last 2 months.
 
 ```sql
-CREATE TABLE active_members
-AS
-SELECT * FROM members
-WHERE member_id IN (SELECT 
-                        DISTINCT issued_member_id   
-                    FROM issued_status
-                    WHERE 
-                        issued_date >= CURRENT_DATE - INTERVAL '2 month'
-                    )
-;
+create table active_members as
+select
+   me.member_id,
+   me.member_name,
+   count(iss.issued_id) as collect_count
+from
+   members as me join issued_status as iss on me.member_id = iss.issued_member_id
+where
+   iss.issued_date >= current_date() - interval 2 month
+group by
+   me.member_id, me.member_name
+order by collect_count desc;
 
 SELECT * FROM active_members;
-
 ```
-
 
 **Task 17: Find Employees with the Most Book Issues Processed**  
-Write a query to find the top 3 employees who have processed the most book issues. Display the employee name, number of books processed, and their branch.
+Write a query to find the top 3 employees who have processed the most book issues. Display the employee's name, number of books processed, and their branch.
 
 ```sql
-SELECT 
-    e.emp_name,
-    b.*,
-    COUNT(ist.issued_id) as no_book_issued
-FROM issued_status as ist
-JOIN
-employees as e
-ON e.emp_id = ist.issued_emp_id
-JOIN
-branch as b
-ON e.branch_id = b.branch_id
-GROUP BY 1, 2
+select
+   em.emp_name,
+   count(distinct iss.issued_id) as books_processed,
+   em.branch_id,
+    b.*
+from
+	employees as em
+join issued_status as iss on em.emp_id = iss.issued_emp_id
+join branch as b on b.branch_id = em.branch_id
+group by em.emp_id, em.branch_id
+order by books_processed desc
+limit 3;
 ```
 
-**Task 18: Identify Members Issuing High-Risk Books**  
-Write a query to identify members who have issued books more than twice with the status "damaged" in the books table. Display the member name, book title, and the number of times they've issued damaged books.    
+**Task 18: Find Employees with the Most Book Issues Processed (monthly)**
 
+```sql
+SELECT
+   em.emp_name,
+   em.branch_id,
+   DATE_FORMAT(iss.issued_date, '%Y-%m') AS issue_month,
+   COUNT(iss.issued_id) AS books_processed
+FROM 
+   employees AS em
+JOIN issued_status AS iss ON em.emp_id = iss.issued_emp_id
+GROUP BY 
+   em.emp_name, em.branch_id, issue_month
+ORDER BY 
+   issue_month DESC, books_processed DESC
+LIMIT 3;
+```
 
-**Task 19: Stored Procedure**
+**Task 19: Identify Members Issuing High-Risk Books**  
+Write a query to identify members who have issued books more than twice with the status "damaged" in the books table. Display the member name, book title, and the number of times they've issued damaged books.
+
+```sql
+select
+   me.member_name,
+   b.book_title,
+   count(iss.issued_id)
+from
+   books as b join issued_status as iss on b.isbn = iss.issued_book_isbn
+join members as me on me.member_id = iss.issued_member_id
+where b.status = 'damaged'
+group by me.member_id, me.member_name, b.book_title
+having count(iss.issued_id) > 2;
+```
+
+**Task 20: Stored Procedure**
 Objective:
 Create a stored procedure to manage the status of books in a library system.
 Description:
@@ -389,43 +420,56 @@ If the book is available, it should be issued, and the status in the books table
 If the book is not available (status = 'no'), the procedure should return an error message indicating that the book is currently not available.
 
 ```sql
+USE `library_project`;
+DROP procedure IF EXISTS `issue_book`;
 
-CREATE OR REPLACE PROCEDURE issue_book(p_issued_id VARCHAR(10), p_issued_member_id VARCHAR(30), p_issued_book_isbn VARCHAR(30), p_issued_emp_id VARCHAR(10))
-LANGUAGE plpgsql
-AS $$
+USE `library_project`;
+DROP procedure IF EXISTS `library_project`.`issue_book`;
+;
 
-DECLARE
--- all the variabable
-    v_status VARCHAR(10);
-
+DELIMITER $$
+USE `library_project`$$
+CREATE DEFINER=`root`@`localhost` PROCEDURE `issue_book`(p_issued_id varchar(10),
+p_member_id varchar (30),
+p_issued_isbn varchar (50),
+p_emp_id varchar (10))
 BEGIN
--- all the code
-    -- checking if book is available 'yes'
-    SELECT 
-        status 
-        INTO
-        v_status
-    FROM books
-    WHERE isbn = p_issued_book_isbn;
+declare v_status varchar(10);
 
-    IF v_status = 'yes' THEN
+-- Step 1: Check book status
+select status into v_status
+from books
+where isbn = p_issued_isbn;
 
-        INSERT INTO issued_status(issued_id, issued_member_id, issued_date, issued_book_isbn, issued_emp_id)
-        VALUES
-        (p_issued_id, p_issued_member_id, CURRENT_DATE, p_issued_book_isbn, p_issued_emp_id);
+-- Step 2: Conditional logic
+if status = 'yes' then
+insert into issued_status(issued_id,
+member_id,
+issued_date,
+issued_isbn,
+emp_id)
+values
+(p_issued_id, p_member_id, current_date(),
+p_issued_isbn, p_emp_id);
 
-        UPDATE books
-            SET status = 'no'
-        WHERE isbn = p_issued_book_isbn;
+-- Mark book as not available
+update books
+set status = 'no'
+where isbn = p_issued_isbn;
 
-        RAISE NOTICE 'Book records added successfully for book isbn : %', p_issued_book_isbn;
+-- Confirmation message
+select concat('Book issued successfully. ISBN: ', p_issued_isbn) as message;
 
+else
+   -- Book is unavailable
+   SIGNAL SQLSTATE '45000'
+   SET MESSAGE_TEXT = 'This book is currently unavailable for issue.';
+   END IF;
+        
+END$$
 
-    ELSE
-        RAISE NOTICE 'Sorry to inform you the book you have requested is unavailable book_isbn: %', p_issued_book_isbn;
-    END IF;
-END;
-$$
+DELIMITER ;
+;
 
 -- Testing The function
 SELECT * FROM books;
@@ -438,12 +482,9 @@ CALL issue_book('IS156', 'C108', '978-0-375-41398-8', 'E104');
 
 SELECT * FROM books
 WHERE isbn = '978-0-375-41398-8'
-
 ```
 
-
-
-**Task 20: Create Table As Select (CTAS)**
+**Task 21: Create Table As Select (CTAS)**
 Objective: Create a CTAS (Create Table As Select) query to identify overdue books and calculate fines.
 
 Description: Write a CTAS query to create a new table that lists each member and the books they have issued but not returned within 30 days. The table should include:
@@ -455,6 +496,26 @@ Description: Write a CTAS query to create a new table that lists each member and
     Number of overdue books
     Total fines
 
+```sql
+create table overdues
+as
+select
+   iss.issued_member_id,
+   me.member_name,
+   datediff(current_date, iss.issued_date) as day_overdue,
+   sum((datediff(current_date, iss.issued_date) - 30) * 0.50) as ftotal_fine,
+   count(*) as overdue_books,
+   (SELECT COUNT(*) FROM issued_status AS ist 
+   WHERE ist.issued_member_id = iss.issued_member_id) AS total_books_issued
+from
+issued_status as iss
+left join books as b on iss.issued_book_isbn = b.isbn
+left join return_status as re on iss.issued_id = re.issued_id
+join members as me on me.member_id = iss.issued_member_id
+where re.return_date is null
+and datediff(current_date, iss.issued_date) > 30
+group by iss.issued_member_id, b.book_title, b.isbn, iss.issued_date;
+```
 
 
 ## Reports
@@ -480,10 +541,10 @@ This project demonstrates the application of SQL skills in creating and managing
 
 ## Author - Engineerjosh7
 
-This project showcases SQL skills essential for database management and analysis. For more content on SQL and data analysis, connect with me through the following channels:
+This project showcases SQL skills essential for database management and analysis. Connect with me through the following channels:
 
-- **Instagram**: [Follow me for daily tips and updates](https://www.instagram.com/zero_analyst/)
-- **LinkedIn**: [Connect with me professionally](https://www.linkedin.com/in/najirr)
-- **Discord**: [Join our community for learning and collaboration](https://discord.gg/36h5f2Z5PK)
+- **Instagram**: [Outside SQL](https://www.instagram.com/Ogunsola901/)
+- **LinkedIn**: [Connect with me professionally](https://www.linkedin.com/in/joshua-ogunsola)
+- **Email**: [Email me](joshusogunsola7@gmail.com)
 
-Thank you for your interest in this project!
+I appreciate your interest in this project!
